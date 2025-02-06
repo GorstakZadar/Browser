@@ -18,9 +18,9 @@ $userProfiles = New-Object System.Collections.Generic.Dictionary[string, [System
 
 # Initialize Main Form
 $form = New-Object Windows.Forms.Form
-$form.Text = "My Browser"
-$form.Width = 800
-$form.Height = 600
+$form.Text = "My Enhanced Browser"
+$form.Width = 1024
+$form.Height = 768
 
 # Initialize Tab Control
 $tabControl = New-Object Windows.Forms.TabControl
@@ -38,6 +38,9 @@ function New-Tab($url) {
 
     $tabControl.TabPages.Add($tabPage)
 
+    # Initialize WebView2 environment
+    $webView.EnsureCoreWebView2Async($null)
+
     # Handle navigation
     if ($url -and $url -ne "") {
         $webView.Source = $url
@@ -52,9 +55,17 @@ function New-Tab($url) {
         param($sender, $args)
         if ($args.IsSuccess) {
             $history.Add($args.Uri.ToString())
+            $addressBar.Text = $args.Uri.ToString()
+            $tabPage.Text = $webView.CoreWebView2.DocumentTitle
         } else {
-            [System.Windows.Forms.MessageBox]::Show("Navigation failed.")
+            [System.Windows.Forms.MessageBox]::Show("Navigation failed: $($args.WebErrorStatus)")
         }
+    })
+
+    # Add event for source changed
+    $webView.add_SourceChanged({
+        param($sender, $args)
+        $addressBar.Text = $webView.Source.ToString()
     })
 }
 
@@ -72,19 +83,65 @@ $addressBar.Add_KeyDown({
     param($sender, $eventArgs)
     if ($eventArgs.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
         $url = $addressBar.Text
-        New-Tab $url
+        if (-not $url.StartsWith("http")) {
+            $url = "https://$url"
+        }
+        $tabControl.SelectedTab.Controls[0].CoreWebView2.Navigate($url)
     }
 })
+
+# Toolbar
+$toolbar = New-Object Windows.Forms.Panel
+$toolbar.Dock = 'Top'
+$toolbar.Height = 40
+$form.Controls.Add($toolbar)
+
+# Back Button
+$backButton = New-Object Windows.Forms.Button
+$backButton.Text = "Back"
+$backButton.Width = 50
+$backButton.Height = 30
+$backButton.Add_Click({
+    $webView = $tabControl.SelectedTab.Controls[0]
+    if ($webView.CoreWebView2.CanGoBack) {
+        $webView.CoreWebView2.GoBack()
+    }
+})
+$toolbar.Controls.Add($backButton)
+
+# Forward Button
+$forwardButton = New-Object Windows.Forms.Button
+$forwardButton.Text = "Forward"
+$forwardButton.Width = 50
+$forwardButton.Height = 30
+$forwardButton.Add_Click({
+    $webView = $tabControl.SelectedTab.Controls[0]
+    if ($webView.CoreWebView2.CanGoForward) {
+        $webView.CoreWebView2.GoForward()
+    }
+})
+$toolbar.Controls.Add($forwardButton)
+
+# Refresh Button
+$refreshButton = New-Object Windows.Forms.Button
+$refreshButton.Text = "Refresh"
+$refreshButton.Width = 50
+$refreshButton.Height = 30
+$refreshButton.Add_Click({
+    $webView = $tabControl.SelectedTab.Controls[0]
+    $webView.CoreWebView2.Reload()
+})
+$toolbar.Controls.Add($refreshButton)
 
 # New Tab Button
 $newTabButton = New-Object Windows.Forms.Button
 $newTabButton.Text = "New Tab"
-$newTabButton.Dock = 'Top'
-$form.Controls.Add($newTabButton)
-
+$newTabButton.Width = 70
+$newTabButton.Height = 30
 $newTabButton.Add_Click({
     New-Tab $defaultHomePage
 })
+$toolbar.Controls.Add($newTabButton)
 
 # Show the main form
 $form.ShowDialog()
